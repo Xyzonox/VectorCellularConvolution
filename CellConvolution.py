@@ -40,8 +40,8 @@ def paint():
     for i, j in pixels: #parallized over pixels
         convolv[i,j] = 0
         for dx, dy in ti.ndrange(filterSize,filterSize):
-            row = dx + i - cellVision % ((prev.shape[0]))
-            col = dy + j - cellVision % ((prev.shape[1]))
+            row = (dx + i - cellVision) % ((prev.shape[0]))
+            col = (dy + j - cellVision) % ((prev.shape[1]))
             convolv[i,j] += prev[row, col] * filterKernel[dx,dy]
         pixels[i,j] = activate(convolv[i,j])  
 
