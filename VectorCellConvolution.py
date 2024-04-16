@@ -3,23 +3,28 @@ import taichi.math as math
 import random
 
 ti.init(arch=ti.cpu)
+
+#Parameters
 n=800 # resolution
+kernelfac = 1.2 #Multiple for convolution kernel, Turn this up if cells are vanishing, down if blowing up / flickering
+cellVision = 3 #How many cells a cell can see in all directions around it
+
+
+filterSize = 2*cellVision+1
+filterKernel = ti.Vector.field(3,dtype=ti.f32, shape=(filterSize,filterSize))
+
 cells = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per pixel to be displayed
 pixels = ti.Vector.field(3,dtype=ti.f32, shape=(n,n))
 prev = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per pixeled for last iteration
 convolv = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores convolution data for every pixel
 accum = ti.Vector.field(3,dtype=ti.f32, shape=(n,n))
-
-kernelfac = 5 #Multiple for convolution kernel
-cellVision = 2 #How many cells a cell can see in all directions around it
-
-filterSize = 2*cellVision+1
-filterKernel = ti.Vector.field(3,dtype=ti.f32, shape=(filterSize,filterSize))
  
 @ti.func
 def rand():
     return ti.random(ti.f32)
 
+
+#Activation Functions
 @ti.func
 def activate(x: float):
     result = 0
@@ -30,7 +35,14 @@ def activate(x: float):
     #elif x < 0:
         #result = 0
     return result
-
+@ti.func
+def Sigmoid(x: float):
+    result = 1/(1+ ti.math.e**(-1*x)) #Sigmoid
+    return result
+@ti.func
+def RevGauss(x: float):
+    result = 1+ -1*ti.math.e**(-1*(x**2)/2) #Reverse Gaussian
+    return result
 @ti.func
 def clamp(x: float):
     result = x
@@ -39,6 +51,17 @@ def clamp(x: float):
     elif x < 0:
         result = 0
     return result
+
+#Channel Select Functions
+@ti.func
+def Minim(x):
+    return ti.min(x[0], x[1], x[2])
+@ti.func
+def Maxim(x):
+    return ti.max(x[0], x[1], x[2])
+@ti.func
+def Average(x):
+    return (x[0] + x[1] + x[2])/3
 
 @ti.kernel
 def setup():
@@ -56,10 +79,11 @@ def CellAuto():
             row = (dx + i - cellVision) % ((prev.shape[0]))
             col = (dy + j - cellVision) % ((prev.shape[1]))
             for k in range(3):
-                convolv[i,j][k] += ti.min(prev[row, col][0], prev[row, col][1], prev[row, col][2]) * filterKernel[dx,dy][k] #* prev[row, col][k] 
+                #convolv[i,j][k] += ti.min(prev[row, col][0], prev[row, col][1], prev[row, col][2]) * filterKernel[dx,dy][k] #* prev[row, col][k]
+                convolv[i,j][k] += Average(prev[row,col]) * filterKernel[dx,dy][k]  
         
         for k in range(3):
-            cells[i,j][k] = clamp(convolv[i,j][k])  
+            cells[i,j][k] = RevGauss(convolv[i,j][k])  
 
 @ti.kernel
 def paint():
