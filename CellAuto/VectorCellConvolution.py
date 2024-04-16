@@ -44,6 +44,18 @@ def RevGauss(x: float):
     result = 1+ -1*ti.math.e**(-1*(x**2)/2) #Reverse Gaussian
     return result
 @ti.func
+def Squiggle(x: float):
+    result = x
+    if x > 2:
+        result = 1
+    elif x > 1:
+        result = x/2
+    elif x < -1:
+        result = 1+x
+    elif x <= 0:
+        result = 0
+    return clamp(result)
+@ti.func
 def clamp(x: float):
     result = x
     if x > 1:
