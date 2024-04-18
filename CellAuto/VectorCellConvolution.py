@@ -1,51 +1,35 @@
 import taichi as ti 
 import taichi.math as math
+import numpy as np
 import random
 
 #Parameters
-ti.init(arch=ti.gpu)
-n=800 # resolution
+rand = int(random.random()*100)
+ti.init(arch=ti.cuda, random_seed=rand)
+n=300 # resolution
 kernelfac = 1 #Multiple for convolution kernel, Turn this up if cells are vanishing, down if blowing up / flickering
-cellVision = 2 #How many cells a cell can see in all directions around it
+randfac = 0.1 #The amount of randomness each element in filterKernel has
+cellVision = 3 #How many cells a cell can see in all directions around it
 
 filterSize = 2*cellVision+1
-filterKernel = ti.Vector.field(3,dtype=ti.f32, shape=(filterSize,filterSize))
-filterRandom = ti.Vector.field(3,dtype=ti.f32, shape=(filterSize,filterSize))
-cells = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per pixel to be displayed
-pixels = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per cell 
-prev = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per pixeled for last iteration
-convolv = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores convolution data for every pixel
-accum = ti.Vector.field(3,dtype=ti.f32, shape=(n,n)) #Stores values per pixel to be displayed, For Blur
+filterKernel = ti.Vector.field(3,dtype=float, shape=(filterSize,filterSize))
+filterRandom = ti.Vector.field(3,dtype=float, shape=(filterSize,filterSize))
+cells = ti.Vector.field(3,dtype=float, shape=(n,n)) #Stores values per pixel to be displayed
+pixels = ti.Vector.field(3,dtype=float, shape=(n,n)) #Stores values per cell 
+prev = ti.Vector.field(3,dtype=float, shape=(n,n)) #Stores values per pixeled for last iteration
+convolv = ti.Vector.field(3,dtype=float, shape=(n,n)) #Stores convolution data for every pixel
+accum = ti.Vector.field(3,dtype=float, shape=(n,n)) #Stores values per pixel to be displayed, For Blur
  
-#Non deterministic number generation
-for i in range(filterSize):
-    for j in range(filterSize):
-        for k in range(3):
-            filterRandom[i,j][k] = (2*random.random())-1
+Pattern = 0
 
-@ti.func
-def rand():
-    return ti.random(ti.f32)
-
-
-#Activation Functions
-@ti.func
-def activate(x: float):
-    result = 0
-    #result = 1/(1+ ti.math.e**(-1*x)) #Sigmoid
-    result = 1+ -1*ti.math.e**(-1*(x**2)/2) #Reverse Gaussian
-    #if x > 1:
-        #result = 1
-    #elif x < 0:
-        #result = 0
-    return result
+#Activation Functions, Pixel Space
 @ti.func
 def Sigmoid(x: float):
-    result = 1/(1+ ti.math.e**(-1*x)) #Sigmoid
+    result = (1/(1+ ti.math.e**(-1*x))) #Sigmoid
     return result
 @ti.func
 def RevGauss(x: float):
-    result = 1+ -1*ti.math.e**(-1*(x**2)/2) #Reverse Gaussian
+    result = (1+ -1*ti.math.e**(-1*(x**2)/2)) #Reverse Gaussian
     return result
 @ti.func
 def Squiggle(x: float):
@@ -53,11 +37,11 @@ def Squiggle(x: float):
     if x > 2:
         result = 1
     elif x > 1:
-        result = x/2
+        result = (x/2)
     elif x < -1:
         result = 1+x
     elif x <= 0:
-        result = x + -.9*x
+        result = x + (-.9) * x
     return clamp(result)
 @ti.func
 def clamp(x: float):
@@ -68,7 +52,7 @@ def clamp(x: float):
         result = 0
     return result
 
-#Channel Select Functions
+#Channel Select Functions, Vector Space
 @ti.func
 def Minim(x):
     return ti.min(x[0], x[1], x[2])
@@ -79,86 +63,92 @@ def Maxim(x):
 def Average(x):
     return (x[0] + x[1] + x[2])/3
 
-#Kernel Matrix Values
+#FilterKernel Generation
 @ti.func
-def Pattern1(d, e, filterSize, kernelfac):
-    row = d
-    row = (row - (filterSize-1)/2)
-    #if row < 0:
-        #row = row * -1
-
-    col = e
-    col = (col - (filterSize-1)/2)
-    #if col < 0:
-        #col = col * -1
-
-    result = kernelfac * ((row + col - 1))
-    return result
-@ti.func
-def Pattern2(d, e, filterSize, kernelfac):
+def Pattern1(d, e, filterSize, kernelfac): #Works better CellVision > 2 at base kernelfac
     row = d
     row = (row - (filterSize-1)/2)
     if row < 0:
         row = row * -1
-    row = row - (filterSize-1)/2
-    if row < 0:
-        row = row * -1
-    #row = row/2
+    row = (row/2)
 
     col = e
     col = (col - (filterSize-1)/2)
     if col < 0:
         col = col * -1
-    col = col - (filterSize-1)/2
+    col = (col/2)
+
+    result = (kernelfac * ((row + col)/((filterSize-1)/4) - .75*(filterSize/7)))
+    Pattern = 1
+    return result
+@ti.func
+def Pattern2(d, e, filterSize, kernelfac): #Works better CellVision > 1 at base kernelfac
+    row = d
+    row = (row - (filterSize-1)/2)
+    if row < 0:
+        row = row * -1
+    row = (row - (filterSize-1)/2)
+    if row < 0:
+        row = row * -1
+
+    col = e
+    col = (col - (filterSize-1)/2)
     if col < 0:
         col = col * -1
-    result = kernelfac * ((row + col - 1))
+    col = (col - (filterSize-1)/2)
+    if col < 0:
+        col = col * -1
+    result = (kernelfac * (((row + col - 1))/(filterSize-2) - 0.27*(filterSize/5)))
+    Pattern = 2
     return result
-
 @ti.func
 def Pattern3(d, e, filterSize, kernelfac):
     row = d
-    row = (row - (filterSize-1)/2)
+    row = ti.float16(row - (filterSize-1)/2)
 
     col = e
-    col = (col - (filterSize-1)/2) 
+    col = ti.float16(col - (filterSize-1)/2) 
     if col > 0:
         col = row
     if row > 0:
         row = col
 
     result = ((row + col + 1))
+    Pattern = 3
     return result
 
+#Kernels
 @ti.kernel
 def setup():
-    for d,e in filterKernel: #Kernel Matrix Generation
+    for i, j in filterRandom:
+        for k in range(3):
+            filterRandom[i,j][k] = (2*ti.random(float))-1
+    for d,e in filterKernel: #Kernel Matrix Generation, The goal is to have each elment in filterKernel to equal close to zero
         for k in range(3): 
-            #filterKernel[d,e][k] = ((rand()*2)-1) * kernelfac #Random Matrix
-            filterKernel[d,e][k] = Pattern3(d,e,filterSize,kernelfac) + filterRandom[i,j][k] * kernelfac 
-    for i, j in prev: #parallized over pixels
-        #prev[i,j] = ti.Vector([rand(), rand(), rand()]) # white noise
-        prev[i,j] = clamp((i % -50)+5) + clamp((j % -50)+5) #Grid
-
+            filterKernel[d,e][k] = filterRandom[d,e][k] * kernelfac #Random Matrix
+            #filterKernel[d,e][k] = Pattern2(d,e,filterSize,kernelfac) + filterRandom[d,e][k] * randfac
+    for i, j in prev: #Starting Pixel State
+        prev[i,j] = ti.Vector([ti.random(float), ti.random(float), ti.random(float)]) # white noise
+        #prev[i,j] = clamp((i % -50)+5) + clamp((j % -50)+5) #Grid
 @ti.kernel
-def CellAuto():
+def CellAuto(): #Cell Automata
     for i, j in pixels: #parallized over pixels
         convolv[i,j] = ti.Vector([0,0,0])
         for dx, dy in ti.ndrange(filterSize,filterSize):
             row = (dx + i - cellVision) % ((prev.shape[0]))
             col = (dy + j - cellVision) % ((prev.shape[1]))
             for k in range(3):
-                #convolv[i,j][k] += ti.min(prev[row, col][0], prev[row, col][1], prev[row, col][2]) * filterKernel[dx,dy][k] #* prev[row, col][k]
-                convolv[i,j][k] += Average(prev[row,col]) * filterKernel[dx,dy][k]  
+                #Vector Space
+                convolv[i,j][k] += (Minim(prev[row,col]) * filterKernel[dx,dy][k])
         
         for k in range(3):
+            #Pixel Space
             cells[i,j][k] = Squiggle(convolv[i,j][k])  
-
 @ti.kernel
-def paint():
+def paint(): #Post Processing
     for i, j in pixels: #parallized over pixels
         accum[i,j] = ti.Vector([0,0,0])
-        count = 0
+        count = int(0)
         for dx, dy in ti.ndrange(filterSize,filterSize):
             row = (dx + i - cellVision) % ((prev.shape[0]))
             col = (dy + j - cellVision) % ((prev.shape[1]))
@@ -169,9 +159,16 @@ def paint():
 
 
 gui = ti.GUI("Cell Auto", res=(n,n))
-
 setup()
-print(filterKernel)
+#print(filterKernel)
+print("Seed: ", rand)
+print("Cell Vision", cellVision)
+print("Kernel Factor", kernelfac)
+print("Random Factor", randfac)
+if Pattern == 0:
+    print("Filter Pattern: Random")
+else:
+    print("Filter Pattern: ", Pattern)
 gui.set_image(prev)
 gui.show()
 while gui.running:
