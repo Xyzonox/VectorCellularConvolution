@@ -6,3 +6,13 @@ Each cell has the dimension 3 (Red, Green, Blue), the Kernel for convolution has
 # Requirements
 Python= 3.10
 Taichi
+
+# Samples
+
+![Screenshot 2024-04-20 064144](https://github.com/Xyzonox/VectorCellularConvolution/assets/85287832/bda59719-c020-4a8c-93c8-4c4d56aa200e)
+
+![Screenshot 2024-04-20 063944](https://github.com/Xyzonox/VectorCellularConvolution/assets/85287832/1b3247e7-a59f-4a1d-983c-df96097ef05b)
+
+![Screenshot 2024-04-20 064050](https://github.com/Xyzonox/VectorCellularConvolution/assets/85287832/de9d0ff7-b7d5-42de-8439-a038aa51d3ad)
+
+![Screenshot 2024-04-20 064200](https://github.com/Xyzonox/VectorCellularConvolution/assets/85287832/e084412f-2e66-4861-95be-7c6ee8dd27ea)
