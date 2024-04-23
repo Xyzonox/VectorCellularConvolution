@@ -9,8 +9,8 @@ parser.add_argument("--CellVision", help="Int; How far each cell can see all aro
 parser.add_argument("--Pattern", help="Int; Kernel for Matrix Convolution: -1: Custom Pattern (Specified using --CustomFilterKernel), 0:Random, 1:Pattern1, 2:Pattern2, 3:Pattern3")
 parser.add_argument("--KernelFactor", help="Float; How large elements in Kernel get, make it lower for exploding cells and higher for vanishing cells")
 parser.add_argument("--RandomFactor", help="Float; Amount of randomness in Kernel, 0 for monochromatic cells")
-parser.add_argument("--SelectFunc", help="Int; Function that decides what color channels to apply convolution to: 1:Average, 2:Minimum, 3:Maximum")
-parser.add_argument("--ActFunc", help="Int; Activation function for each cell: 1:Squiggle, 2:RevGauss, 3:Sigmoid, 4:Clamp")
+parser.add_argument("--SelectFunc", help="Int; Function that decides what color channels to apply convolution to: 1:Average, 2:Minimum, 3:Maximum, 4:FlipFlop, 5:ChannelLength")
+parser.add_argument("--ActFunc", help="Int; Activation function for each cell: 1:Squiggle, 2:RevGauss, 3:Sigmoid, 4:Clamp, 5:AvNeighbors")
 parser.add_argument("--StartGrid", help="Int; What the starting grid looks like: 0:WhiteNoise, 1:Grid, 2:R-G Coordinates")
 parser.add_argument("--Seed", help="Int; Seed for deterministic random value generation")
 parser.add_argument("--CellDimension", help="Int; How many parameters a cell has and will be seen by other cell, minimum is 3")
@@ -44,17 +44,28 @@ def main():
     accum = ti.Vector.field(3,dtype=float, shape=(params[1],params[1])) #Stores values per pixel to be displayed, For Blur
     
     Info(params[0], params[2], params[3], params[4], params[5], params[6], params[7], params[8], params[9])
-    gui = ti.GUI("Cell Auto", res=(params[1],params[1]))
+    gui = ti.GUI("Cell Auto", res=(params[1],params[1]), fast_gui=True)
     setup(params[2], params[3], params[4], filterSize, params[8], params[9], params[10])
     gui.set_image(prevPixel)
     gui.show()
+    record = False
+    video_manager = ti.tools.VideoManager(output_dir="Outputs/Output"+str(iteration), framerate=24, automatic_build=False)
     while gui.running:
-        if gui.get_event(ti.GUI.PRESS):
-            iteration += 1
-            setup(params[2], params[3], params[4], filterSize, params[8], params[9], params[10])
-            print("Generation Iteration: ", iteration)
+        for e in gui.get_events(gui.PRESS):
+            if e.key == ti.GUI.LMB:
+                iteration += 1
+                setup(params[2], params[3], params[4], filterSize, params[8], params[9], params[10])
+                print("Generation Iteration: ", iteration)
+            elif e.key == "r":
+                if not(record):
+                    record = True
+                else:
+                    record = False
+                    video_manager.make_video(gif=True)
+        if record:
+            video_manager.write_frame(pixels)
         CellAuto(params[5], filterSize, params[6], params[7], params[9])
-        paint(params[5], filterSize)
+        paint(params[5], filterSize, params[9])
         gui.set_image(pixels)
         gui.show()
         prev.copy_from(cells)
@@ -69,7 +80,7 @@ def Arguments():
     if args.Resolution:
         n= int(args.Resolution) or int(300)
     else:
-        n = int(300)
+        n = int(500)
 
     if args.KernelFactor: #Multiple for convolution kernel, Turn this up if cells are vanishing, down if blowing up / flickering
         kernelfac = float(args.KernelFactor) 
@@ -79,7 +90,7 @@ def Arguments():
     if args.RandomFactor: #The amount of randomness each element in filterKernel has
         randfac = float(args.RandomFactor) 
     else: 
-        randfac = 1.
+        randfac = .1
     
     if args.Pattern:
         Pattern = int(args.Pattern) 
@@ -89,17 +100,17 @@ def Arguments():
     if args.CellVision: #How many cells a cell can see in all directions around it
         cellVision = int(args.CellVision)
     else: 
-        cellVision = int(2) 
+        cellVision = int(4) 
     
     if args.SelectFunc:
         select = int(args.SelectFunc)
     else:
-        select = int(1)
+        select = int(5)
     
     if args.ActFunc:
         activation = int(args.ActFunc)
     else:
-        activation = int(1)
+        activation = int(2)
 
     if args.StartGrid:
         start = int(args.StartGrid)
@@ -112,7 +123,7 @@ def Arguments():
         else:
             cellDimension = int(3)
     else:
-        cellDimension = int(3)
+        cellDimension = int(6)
 
     if args.CustomFilterKernel:
         customFilterKernel = (np.genfromtxt(args.CustomFilterKernel, dtype=np.single, delimiter=","))
@@ -123,6 +134,7 @@ def Arguments():
 
 def Info(seed, kernelfac, randfac, Pattern, cellVision, select, activation, start, cellDimension):
     #print(filterKernel)
+    print("Seed: ", seed)
     print("Cell Vision: ", cellVision)
     print("Kernel Factor: ", kernelfac)
     print("Random Factor: ", randfac)
@@ -157,32 +169,54 @@ def Info(seed, kernelfac, randfac, Pattern, cellVision, select, activation, star
 
 #Activation Functions, Pixel Space
 @ti.func
-def Sigmoid(x: float):
-    result = (1/(1+ ti.math.e**(-1*x))) #Sigmoid
+def Sigmoid(x: float, k):
+    result = x
+    if k <= 2:
+        result = (1/(1+ ti.math.e**(-1*x))) #Sigmoid
+    else:
+        result = (k/(1+ ti.math.e**(-1*x)))
     return result
 @ti.func
-def RevGauss(x: float):
-    result = (1+ -1*ti.math.e**(-1*(x**2)/2)) #Reverse Gaussian
+def RevGauss(x: float, k:float):
+    result = x
+    if k <= 2:
+        result = (1+ -1*ti.math.e**(-1*(x**2)/2)) #Reverse Gaussian
+    else:
+        result = (k+ -1*k*ti.math.e**(-1*(x**2)/2)) -k/2
     return result
 @ti.func
-def Squiggle(x: float):
+def Squiggle(x: float, k):
     result = x
     if x > 2:
-        result = 1
+        result = x-1
     elif x > 1:
         result = (x/2)
     elif x < -1:
         result = 1+x
     elif x <= 0:
         result = x + (-.9) * x
-    return clamp(result)
+
+    if k <= 2:
+        result = clamp(result, 1, 0)
+    else:
+        result = clamp(result, k, -1 * k)
+    
+    return result
 @ti.func
-def clamp(x: float):
+def clamp(x: float, upper, lower):
     result = x
-    if x > 1:
-        result = 1
-    elif x < 0:
-        result = 0
+    if x > upper:
+        result = upper
+    elif x < lower:
+        result = lower
+    return result
+@ti.func
+def AvNeighbors (x:float, filterSize, k):
+    result = x/(filterSize * filterSize)
+    if k <= 2:
+        result = clamp(result, 1, 0)
+    else:
+        result = clamp(result, k, -1* k)
     return result
 
 #Channel Select Functions, Vector Space
@@ -207,8 +241,21 @@ def Average(x, CellDimension:float):
         collect += x[k]
     result = collect/CellDimension
     return result
+@ti.func
+def FlipFlop(x, CellDimension:ti.i16):
+    collect = 0.
+    for k in range(ti.i16(CellDimension)):
+        if k/2 == int(k/2):
+            collect += x[k]
+        else:
+            collect -= x[k]
+    #result = collect/CellDimension
+    return collect
+@ti.func
+def ChannelLength(x):
+    return ti.math.length(x)
 
-#FilterKernel Generation
+#Procedural FilterKernel Generation
 @ti.func
 def Pattern1(d:float, e:float, filterSize:float, kernelfac:float): #Works better CellVision > 2 at base kernelfac
     row = d
@@ -282,7 +329,7 @@ def setup(kernelfac:ti.f32, randfac:ti.f32, Pattern:ti.i16, filterSize:ti.i16, s
                 filterKernel[d,e][k] = ((filterRandom[d,e][k])) * kernelfac #Random Matrix
     for i, j in prev: #Starting Pixel State
         if start == 1:
-            prev[i,j] = clamp((i % -50)+5) + clamp((j % -50)+5) #Grid
+            prev[i,j] = clamp((i % -50)+5, 1, 0) + clamp((j % -50)+5, 1, 0) #Grid
         else:
             for k in range(CellDimension):
                 prev[i,j][k] = ti.random(float) # white noise
@@ -298,34 +345,40 @@ def CellAuto(cellVision:ti.i16, filterSize:ti.i16, select:ti.i16, activation:ti.
             row = (dx + i - cellVision) % ((prev.shape[0]))
             col = (dy + j - cellVision) % ((prev.shape[1]))
             for k in range(ti.i16(CellDimension)):
-                #Vector Space
+                #Select Functions
                 if select == 1:
                     convolv[i,j][k] += (Average(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
                 elif select == 2:
                     convolv[i,j][k] += (Minim(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
                 elif select == 3:
                     convolv[i,j][k] += (Maxim(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
+                elif select == 4:
+                    convolv[i,j][k] += (FlipFlop(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
+                elif select== 5:
+                    convolv[i,j][k] += (ChannelLength(prev[row,col]) * filterKernel[dx,dy][k])
                 else:
                     convolv[i,j][k] += (Average(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
 
         for k in range(ti.i16(CellDimension)):
-            #Pixel Space
+            #Activation Functions
             if activation == 1:
-                cells[i,j][k] = Squiggle(convolv[i,j][k])
+                cells[i,j][k] = Squiggle(convolv[i,j][k], k)
             elif activation == 2:
-                cells[i,j][k] = RevGauss(convolv[i,j][k])
+                cells[i,j][k] = RevGauss(convolv[i,j][k], k)
             elif activation == 3:
-                cells[i,j][k] = Sigmoid(convolv[i,j][k])
+                cells[i,j][k] = Sigmoid(convolv[i,j][k], k)
             elif activation == 4:
-                cells[i,j][k] = clamp(convolv[i,j][k])
+                cells[i,j][k] = clamp(convolv[i,j][k], 1, 0)
+            elif activation == 5:
+                cells[i,j][k] = AvNeighbors(convolv[i,j][k], filterSize, k)
             else:
-                cells[i,j][k] = Squiggle(convolv[i,j][k])
+                cells[i,j][k] = Squiggle(convolv[i,j][k], k)
 @ti.kernel
-def paint(cellVision:ti.i16, filterSize:ti.i16): #Post Processing
+def paint(cellVision:ti.i16, filterSize:ti.i16, CellDimension:ti.i16): #Post Processing
     for i, j in pixels: #parallized over pixels
         accum[i,j] = ti.Vector([0,0,0])
         count = int(0)
-        for dx, dy in ti.ndrange(filterSize,filterSize):
+        for dx, dy in ti.ndrange(5,5):
             row = (dx + i - cellVision) % ((prev.shape[0]))
             col = (dy + j - cellVision) % ((prev.shape[1]))
             accum[i,j] += ti.Vector([cells[row, col][0], cells[row, col][1], cells[row, col][2]])
