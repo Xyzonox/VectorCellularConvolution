@@ -9,7 +9,7 @@ parser.add_argument("--CellVision", help="Int; How far each cell can see all aro
 parser.add_argument("--Pattern", help="Int; Kernel for Matrix Convolution: -1: Custom Pattern (Specified using --CustomFilterKernel), 0:Random, 1:Pattern1, 2:Pattern2, 3:Pattern3")
 parser.add_argument("--KernelFactor", help="Float; How large elements in Kernel get, make it lower for exploding cells and higher for vanishing cells")
 parser.add_argument("--RandomFactor", help="Float; Amount of randomness in Kernel, 0 for monochromatic cells")
-parser.add_argument("--SelectFunc", help="Int; Function that decides what color channels to apply convolution to: 1:Average, 2:Minimum, 3:Maximum, 4:FlipFlop, 5:ChannelLength")
+parser.add_argument("--SelectFunc", help="Int; Function that decides what color channels to apply convolution to: 1:Average, 2:Minimum, 3:Maximum, 4:FlipFlop, 5:ChannelLength, 6:ComplexDive")
 parser.add_argument("--ActFunc", help="Int; Activation function for each cell: 1:Squiggle, 2:RevGauss, 3:Sigmoid, 4:Clamp, 5:AvNeighbors")
 parser.add_argument("--StartGrid", help="Int; What the starting grid looks like: 0:WhiteNoise, 1:Grid, 2:R-G Coordinates")
 parser.add_argument("--Seed", help="Int; Seed for deterministic random value generation")
@@ -49,7 +49,7 @@ def main():
     gui.set_image(prevPixel)
     gui.show()
     record = False
-    video_manager = ti.tools.VideoManager(output_dir="Outputs/Output"+str(iteration), framerate=24, automatic_build=False)
+    video_manager = ti.tools.VideoManager(output_dir="Outputs/GlobalSession", framerate=24, automatic_build=False)
     while gui.running:
         for e in gui.get_events(gui.PRESS):
             if e.key == ti.GUI.LMB:
@@ -254,6 +254,20 @@ def FlipFlop(x, CellDimension:ti.i16):
 @ti.func
 def ChannelLength(x):
     return ti.math.length(x)
+@ti.func
+def ComplexDive(x, CellDimension:ti.i16, i ,j):
+    real = (x[1] + x[2] + x[3])
+    comp = 0
+    for k in range(ti.i16(CellDimension - 3)):
+        comp += x[k+3]
+    c = ti.Vector([real, comp])
+    z = ti.Vector([i/pixels.shape[0] - 1, j/pixels.shape[1] - 0.5]) * 2
+    iterations = 0
+    while z.norm() < 5 and iterations < 10:
+        z = ti.math.cpow(z, 0.5) + c
+        iterations += 1
+    #result = collect/CellDimension
+    return iterations
 
 #Procedural FilterKernel Generation
 @ti.func
@@ -356,6 +370,8 @@ def CellAuto(cellVision:ti.i16, filterSize:ti.i16, select:ti.i16, activation:ti.
                     convolv[i,j][k] += (FlipFlop(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
                 elif select== 5:
                     convolv[i,j][k] += (ChannelLength(prev[row,col]) * filterKernel[dx,dy][k])
+                elif select== 6:
+                    convolv[i,j][k] += (ComplexDive(prev[row,col], CellDimension, i, j) * filterKernel[dx,dy][k])
                 else:
                     convolv[i,j][k] += (Average(prev[row,col], CellDimension) * filterKernel[dx,dy][k])
 
