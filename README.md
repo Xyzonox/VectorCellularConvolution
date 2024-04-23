@@ -15,7 +15,7 @@ pip install taichi
 # Controls
 Left Mouse Click: iterate through random KernelFactors and starting cell states (As long as randfac isn't zero)
 
-R Key: Press once to start recording and again to finish recording a snapshot, all snapshots are cut togther upon program exit
+R Key: Press once to start recording and again to finish recording a snapshot, all snapshots are cut togther upon program exit (Clear generated \GlobalSession Directory for new videos)
 
 # Samples
 ![video](https://github.com/Xyzonox/VectorCellularConvolution/assets/85287832/2d91deb9-1ea8-4367-b2ec-ef1689393628)
