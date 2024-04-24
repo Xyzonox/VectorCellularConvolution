@@ -23,7 +23,7 @@ args = parser.parse_args()
 
 def main(): 
     params = Arguments() #[seed, n, kernelfac,randfac,Pattern,cellVision, select, activation, start, cellDimension, customFilterKernel]
-    ti.init(arch=ti.cpu, random_seed=params[0])
+    ti.init(arch=ti.gpu, random_seed=params[0])
     filterSize = int(2*params[5]+1)
     iteration = 0
 
