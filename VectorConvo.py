@@ -5,7 +5,9 @@ import argparse
 import SelectFunctions as sf
 import ActivationFunctions as af
 
-parser = argparse.ArgumentParser(prog="VectorConvo", description="Placeholder", epilog="Placeholder")
+desc = "This is a GPU accelerated cellular automata program"
+epil = "VectorConvolution"
+parser = argparse.ArgumentParser(prog="VectorConvo", description=desc, epilog=epil)
 parser.add_argument("--Resolution", help="Int; How many pixels in a square GUI")
 parser.add_argument("--CellVision", help="Int; How far each cell can see all aroud itself")
 parser.add_argument("--Pattern", help="Int; Kernel for Matrix Convolution: -1: Custom Pattern (Specified using --CustomFilterKernel), 0:Random, 1:Pattern1, 2:Pattern2, 3:Pattern3")
